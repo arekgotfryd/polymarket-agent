@@ -1,22 +1,24 @@
 import { PermissionResult, query } from "@anthropic-ai/claude-agent-sdk";
 import * as readline from "readline";
-const PROMPT = `Bring all the active markets data which have either "Weekend Box Office" or "Opening Weekend Box Office" in their market name and save info about them in a .json file called opening_weekend.json in the current directory.
 
-Use the polymarket MCP tools available to:
-1. Search for markets related to "movie opening weekend" or "box office"
-2. Get details about each active market found
-3. Collect relevant information like market title, description, outcomes, prices, and volume
-4. Save all the collected data to opening_weekend.json`;
+const SYSTEM_PROMPT = `You are a helpful Polymarket assistant. You have access to Polymarket MCP tools to:
+- Search for markets (search_markets)
+- Get market details (get_markets, get_market_by_id)
+- Get price data (get_price, get_prices)
+- Get event data (get_events, get_event_by_id)
+
+Help the user explore prediction markets, find information about specific markets, and save data when requested.`;
+
+// Create a single readline interface for the session
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
 
 // Helper to prompt user for input in the terminal
 function prompt(question: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
   return new Promise((resolve) =>
     rl.question(question, (answer) => {
-      rl.close();
       resolve(answer);
     })
   );
@@ -60,11 +62,11 @@ async function handleAskUserQuestion(input: any): Promise<PermissionResult> {
   };
 }
 
-async function main(): Promise<void> {
-  console.log("Starting Polymarket Movie Markets Agent...\n");
+async function processUserMessage(userMessage: string): Promise<void> {
+  const fullPrompt = `${SYSTEM_PROMPT}\n\nUser request: ${userMessage}`;
 
   const result = query({
-    prompt: PROMPT,
+    prompt: fullPrompt,
     options: {
       model: "claude-opus-4-5-20251101",
       permissionMode: "default",
@@ -75,7 +77,7 @@ async function main(): Promise<void> {
           args: ["/Volumes/Lexar/repos/polymarket-mcp/dist/index.js"],
         },
       },
-      tools: ["Read", "Glob", "Grep", "AskUserQuestion"],
+      tools: ["Read", "Write", "Glob", "Grep", "AskUserQuestion"],
       canUseTool: async (toolName, input) => {
         // Route AskUserQuestion to our question handler
         if (toolName === "AskUserQuestion") {
@@ -97,10 +99,37 @@ async function main(): Promise<void> {
         }
       }
     } else if (message.type === "result") {
-      console.log("\n--- Agent completed ---");
-      console.log("Exit reason:", message.subtype);
+      console.log("\n--- Response complete ---\n");
     }
   }
 }
 
-main().catch(console.error);
+async function main(): Promise<void> {
+  console.log("Polymarket Agent - Interactive Mode");
+  console.log("====================================");
+  console.log("Ask me anything about Polymarket prediction markets.");
+  console.log("Type 'quit' or 'exit' to end the session.\n");
+
+  while (true) {
+    const userInput = await prompt("You: ");
+    const trimmedInput = userInput.trim().toLowerCase();
+
+    if (trimmedInput === "quit" || trimmedInput === "exit") {
+      console.log("\nGoodbye!");
+      rl.close();
+      break;
+    }
+
+    if (userInput.trim() === "") {
+      continue;
+    }
+
+    console.log("\nAssistant:");
+    await processUserMessage(userInput.trim());
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  rl.close();
+});
